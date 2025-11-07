@@ -19,7 +19,8 @@ scheduler = BackgroundScheduler()
 
 def init_app():
     """Initialize the application"""
-    pass
+    # Initialize database (downloads from GCS if enabled)
+    persistence.init_database()
 
 
 def setup_scheduler():
