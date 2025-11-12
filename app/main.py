@@ -122,8 +122,8 @@ def run_watcher():
             started_at=datetime.utcnow(),
             status="pending"
         )
-        check_run = persistence.save_check_run(check_run)
-        logger.info(f"Created CheckRun {check_run.id}")
+        check_run_id = persistence.save_check_run(check_run)
+        logger.info(f"Created CheckRun {check_run_id}")
 
         # 3. Scrape appointment slots
         try:
@@ -133,7 +133,7 @@ def run_watcher():
             logger.error(f"Scraping failed: {e}", exc_info=True)
             # Update CheckRun as failed
             with persistence.get_session() as session:
-                run = session.get(CheckRun, check_run.id)
+                run = session.get(CheckRun, check_run_id)
                 run.status = "failed"
                 run.error_message = str(e)
                 run.completed_at = datetime.utcnow()
@@ -148,14 +148,14 @@ def run_watcher():
         logger.info(f"Filtered to {len(slot_dicts)} slots within 14 days")
 
         # 5. Convert to AppointmentSlot models and persist
-        slots = timeutils.convert_to_appointment_slots(filtered_dict, check_run.id)
+        slots = timeutils.convert_to_appointment_slots(filtered_dict, check_run_id)
         if slots:
             persistence.save_slots(slots)
             logger.info(f"Saved {len(slots)} slots to database")
 
         # Update CheckRun
         with persistence.get_session() as session:
-            run = session.get(CheckRun, check_run.id)
+            run = session.get(CheckRun, check_run_id)
             run.status = "success"
             run.completed_at = datetime.utcnow()
             run.slots_found = len(slots)
@@ -196,7 +196,7 @@ def run_watcher():
                 for fingerprint, location, date_str in fingerprints_to_save:
                     persistence.record_alert_fingerprint(
                         fingerprint=fingerprint,
-                        check_run_id=check_run.id,
+                        check_run_id=check_run_id,
                         alert_type="email"
                     )
                 logger.info(f"Saved {len(fingerprints_to_save)} fingerprints")
@@ -206,7 +206,7 @@ def run_watcher():
                 return jsonify({
                     "status": "partial_success",
                     "message": "Slots found but email failed",
-                    "check_run_id": check_run.id,
+                    "check_run_id": check_run_id,
                     "slots_found": len(slots),
                     "new_slots": len(fingerprints_to_save),
                     "error": str(e)
@@ -216,7 +216,7 @@ def run_watcher():
 
         return jsonify({
             "status": "success",
-            "check_run_id": check_run.id,
+            "check_run_id": check_run_id,
             "slots_found": len(slots),
             "new_slots": len(fingerprints_to_save),
             "email_sent": len(new_slots_by_location) > 0
@@ -272,6 +272,26 @@ def run_reporter():
                 slots = session.exec(slots_stmt).all()
             else:
                 slots = []
+
+            # Eagerly load all attributes and expunge from session
+            # This prevents "not bound to a Session" errors
+            for slot in slots:
+                _ = slot.id
+                _ = slot.location
+                _ = slot.slot_time
+                _ = slot.check_run_id
+                _ = slot.details
+                _ = slot.created_at
+                session.expunge(slot)
+
+            for run in check_runs:
+                _ = run.id
+                _ = run.started_at
+                _ = run.completed_at
+                _ = run.status
+                _ = run.error_message
+                _ = run.slots_found
+                session.expunge(run)
 
         logger.info(f"Found {len(check_runs)} check runs and {len(slots)} slots today")
 

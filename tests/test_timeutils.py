@@ -27,7 +27,8 @@ class TestParseAppointmentDateTime:
         assert result.day == 8
         assert result.hour == 9
         assert result.minute == 0
-        assert result.tzinfo == ET
+        # Check timezone by name instead of direct comparison
+        assert result.tzinfo.zone == 'America/New_York'
 
     def test_parse_afternoon_time(self):
         """Test parsing PM times"""
@@ -35,7 +36,7 @@ class TestParseAppointmentDateTime:
 
         assert result.hour == 14
         assert result.minute == 30
-        assert result.tzinfo == ET
+        assert result.tzinfo.zone == 'America/New_York'
 
     def test_parse_noon(self):
         """Test parsing noon (12:00 PM)"""
@@ -202,7 +203,7 @@ class TestFilterSlotsBy14Days:
                 for date_str, datetimes in dates.items():
                     for dt in datetimes:
                         assert dt.tzinfo is not None
-                        assert dt.tzinfo == ET
+                        assert dt.tzinfo.zone == 'America/New_York'
 
     def test_slot_list_has_correct_structure(self):
         """Test that the returned slot list has correct dictionary structure"""
@@ -281,7 +282,7 @@ class TestConvertToAppointmentSlots:
 
         slots = convert_to_appointment_slots(filtered_dict, check_run_id=1)
 
-        assert slots[0].slot_time.tzinfo == ET
+        assert slots[0].slot_time.tzinfo.zone == 'America/New_York'
 
 
 class TestGetCurrentETTime:
@@ -292,7 +293,7 @@ class TestGetCurrentETTime:
         result = get_current_et_time()
 
         assert result.tzinfo is not None
-        assert result.tzinfo == ET
+        assert result.tzinfo.zone == 'America/New_York'
 
     def test_returns_current_time(self):
         """Test that returned time is approximately now"""

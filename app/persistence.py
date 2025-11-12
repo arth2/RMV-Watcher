@@ -134,13 +134,16 @@ def init_database():
 # Helper Functions
 # ============================================================================
 
-def save_check_run(check_run: CheckRun) -> CheckRun:
-    """Save a check run to database"""
+def save_check_run(check_run: CheckRun) -> int:
+    """Save a check run to database and return its ID"""
     with get_session() as session:
         session.add(check_run)
         session.commit()
         session.refresh(check_run)
-        return check_run
+        # Get the ID while session is still open
+        check_run_id = check_run.id
+    # Return just the ID - no session binding issues
+    return check_run_id
 
 
 def save_slots(slots: List[AppointmentSlot]) -> int:
