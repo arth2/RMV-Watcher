@@ -142,7 +142,8 @@ def save_check_run(check_run: CheckRun) -> int:
         session.refresh(check_run)
         # Get the ID while session is still open
         check_run_id = check_run.id
-    # Return just the ID - no session binding issues
+
+    # Return just the ID - simple integer, no session binding issues
     return check_run_id
 
 
@@ -169,7 +170,18 @@ def record_alert_fingerprint(fingerprint: str, check_run_id: int, alert_type: st
         session.add(alert)
         session.commit()
         session.refresh(alert)
-        return alert
+
+        # Load all attributes before session closes
+        _ = alert.id
+        _ = alert.fingerprint
+        _ = alert.check_run_id
+        _ = alert.sent_at
+        _ = alert.alert_type
+
+        # Expunge to make detached but keep data
+        session.expunge(alert)
+
+    return alert
 
 
 def has_fingerprint(fingerprint: str) -> bool:
@@ -193,14 +205,24 @@ def save_link(link: Link):
 def get_link(link_id: int) -> Optional[Link]:
     """Get a link by ID"""
     with get_session() as session:
-        return session.get(Link, link_id)
+        link = session.get(Link, link_id)
+        if link:
+            # Load all attributes and expunge
+            _ = (link.id, link.url, link.expires_at, link.created_at, link.updated_at)
+            session.expunge(link)
+        return link
 
 
 def get_all_links():
     """Get all links from database"""
     with get_session() as session:
         statement = select(Link)
-        return session.exec(statement).all()
+        links = list(session.exec(statement).all())
+        # Expunge all links to make them detached
+        for link in links:
+            _ = (link.id, link.url, link.expires_at, link.created_at, link.updated_at)
+            session.expunge(link)
+        return links
 
 
 def update_link(link: Link):
@@ -226,14 +248,24 @@ def save_scrape_result(result: ScrapeResult):
 def get_scrape_result(result_id: int) -> Optional[ScrapeResult]:
     """Get a scrape result by ID"""
     with get_session() as session:
-        return session.get(ScrapeResult, result_id)
+        result = session.get(ScrapeResult, result_id)
+        if result:
+            # Load all attributes and expunge
+            _ = (result.id, result.link_id, result.scraped_at, result.slots_found, result.status)
+            session.expunge(result)
+        return result
 
 
 def get_scrape_results_by_link(link_id: int):
     """Get all scrape results for a link"""
     with get_session() as session:
         statement = select(ScrapeResult).where(ScrapeResult.link_id == link_id)
-        return session.exec(statement).all()
+        results = list(session.exec(statement).all())
+        # Expunge all results to make them detached
+        for result in results:
+            _ = (result.id, result.link_id, result.scraped_at, result.slots_found, result.status)
+            session.expunge(result)
+        return results
 
 
 def save_notification(notification: Notification):
@@ -245,7 +277,12 @@ def save_notification(notification: Notification):
 def get_notification(notification_id: int) -> Optional[Notification]:
     """Get a notification by ID"""
     with get_session() as session:
-        return session.get(Notification, notification_id)
+        notification = session.get(Notification, notification_id)
+        if notification:
+            # Load all attributes and expunge
+            _ = (notification.id, notification.scrape_result_id, notification.sent_at, notification.notification_type)
+            session.expunge(notification)
+        return notification
 
 
 def get_notifications_by_scrape_result(scrape_result_id: int):
@@ -254,4 +291,9 @@ def get_notifications_by_scrape_result(scrape_result_id: int):
         statement = select(Notification).where(
             Notification.scrape_result_id == scrape_result_id
         )
-        return session.exec(statement).all()
+        notifications = list(session.exec(statement).all())
+        # Expunge all notifications to make them detached
+        for notification in notifications:
+            _ = (notification.id, notification.scrape_result_id, notification.sent_at, notification.notification_type)
+            session.expunge(notification)
+        return notifications

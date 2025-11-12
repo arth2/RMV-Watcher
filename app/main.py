@@ -122,7 +122,7 @@ def run_watcher():
             started_at=datetime.utcnow(),
             status="pending"
         )
-        check_run_id = persistence.save_check_run(check_run)
+        check_run_id = persistence.save_check_run(check_run)  # Returns the ID directly
         logger.info(f"Created CheckRun {check_run_id}")
 
         # 3. Scrape appointment slots
@@ -272,26 +272,6 @@ def run_reporter():
                 slots = session.exec(slots_stmt).all()
             else:
                 slots = []
-
-            # Eagerly load all attributes and expunge from session
-            # This prevents "not bound to a Session" errors
-            for slot in slots:
-                _ = slot.id
-                _ = slot.location
-                _ = slot.slot_time
-                _ = slot.check_run_id
-                _ = slot.details
-                _ = slot.created_at
-                session.expunge(slot)
-
-            for run in check_runs:
-                _ = run.id
-                _ = run.started_at
-                _ = run.completed_at
-                _ = run.status
-                _ = run.error_message
-                _ = run.slots_found
-                session.expunge(run)
 
         logger.info(f"Found {len(check_runs)} check runs and {len(slots)} slots today")
 
