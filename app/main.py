@@ -3,11 +3,13 @@
 import os
 import logging
 import hashlib
+import atexit
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlmodel import select
+import pytz
 
 from app import scraper, notifier, reporter, persistence, timeutils
 from app.models import Settings, CheckRun, AppointmentSlot, AlertSent
@@ -33,22 +35,89 @@ def init_app():
     """Initialize the application"""
     # Initialize database (downloads from GCS if enabled)
     persistence.init_database()
+    # Start background scheduler for automated jobs
+    start_scheduler()
     logger.info("Application initialized")
+
+
+def _scheduled_watcher_job():
+    """Wrapper function for scheduled watcher runs"""
+    try:
+        with app.app_context():
+            logger.info("Running scheduled watcher job")
+            run_watcher()
+    except Exception as e:
+        logger.error(f"Scheduled watcher job failed: {e}", exc_info=True)
+
+
+def _scheduled_reporter_job():
+    """Wrapper function for scheduled reporter runs"""
+    try:
+        with app.app_context():
+            logger.info("Running scheduled reporter job")
+            run_reporter()
+    except Exception as e:
+        logger.error(f"Scheduled reporter job failed: {e}", exc_info=True)
 
 
 def setup_scheduler():
     """Setup scheduled jobs"""
-    pass
+    # Get configuration from environment
+    watcher_interval = int(os.getenv('WATCHER_INTERVAL_MINUTES', '30'))
+    reporter_hour = int(os.getenv('REPORTER_HOUR', '8'))  # 8 AM ET
+    enable_scheduler = os.getenv('ENABLE_SCHEDULER', 'true').lower() == 'true'
+
+    if not enable_scheduler:
+        logger.info("Scheduler disabled by ENABLE_SCHEDULER environment variable")
+        return
+
+    # Eastern Time timezone
+    eastern = pytz.timezone('America/New_York')
+
+    # Add watcher job - runs every N minutes
+    scheduler.add_job(
+        func=_scheduled_watcher_job,
+        trigger='interval',
+        minutes=watcher_interval,
+        id='watcher_job',
+        name='Run appointment watcher',
+        replace_existing=True
+    )
+    logger.info(f"Scheduled watcher job to run every {watcher_interval} minutes")
+
+    # Add reporter job - runs daily at specified hour ET
+    scheduler.add_job(
+        func=_scheduled_reporter_job,
+        trigger='cron',
+        hour=reporter_hour,
+        minute=0,
+        timezone=eastern,
+        id='reporter_job',
+        name='Send daily report',
+        replace_existing=True
+    )
+    logger.info(f"Scheduled reporter job to run daily at {reporter_hour}:00 AM ET")
 
 
 def start_scheduler():
     """Start the background scheduler"""
-    pass
+    if not scheduler.running:
+        setup_scheduler()
+        scheduler.start()
+        logger.info("Background scheduler started")
+        # Register shutdown handler
+        atexit.register(stop_scheduler)
+    else:
+        logger.warning("Scheduler is already running")
 
 
 def stop_scheduler():
     """Stop the background scheduler"""
-    pass
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
+        logger.info("Background scheduler stopped")
+    else:
+        logger.warning("Scheduler is not running")
 
 
 def compute_fingerprint(location: str, date: str, times: list) -> str:
@@ -432,7 +501,9 @@ def trigger_scrape():
     return run_watcher()
 
 
+# Initialize application (runs when module is imported or executed)
+init_app()
+
 if __name__ == '__main__':
-    init_app()
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('DEBUG', 'False') == 'True')
